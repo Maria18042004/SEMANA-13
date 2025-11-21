@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Escanear QR - Registrar asistencia</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="container">
+    <h1>Escanear QR - Registrar asistencia</h1>
+
+    <div id="reader" style="width:360px; max-width:100%;"></div>
+
+    <div id="status" class="status">Esperando escaneo...</div>
+
+    <p><a href="index.html">← Volver</a></p>
+  </main>
+
+  <!-- html5-qrcode CDN -->
+  <script src="https://unpkg.com/html5-qrcode"></script>
+  <script src="app.js"></script>
+  <script>
+    (function () {
+      const statusEl = document.getElementById('status');
+
+      // URL de tu Web App de Google Apps Script
+      const SHEET_ENDPOINT_URL =
+        "https://script.google.com/macros/s/AKfycbygVD_ankSMT8A4gXOcfsBYpYKouomagpcLvJMXp-O7QA8A5QFWqY9sAVLbW2C6d0c0_g/exec";
+
+      // FUNCIÓN QUE ENVÍA A GOOGLE SHEETS (CORREGIDA)
+      async function enviarARegistro(rowObj) {
+        statusEl.textContent = 'Enviando registro...';
+
+        await fetch(SHEET_ENDPOINT_URL, {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(rowObj)
+        });
+
+        // No hay respuesta en no-cors -> consideramos éxito
+        statusEl.textContent =
+          `✔ Registrado: ${rowObj.dni} - ${rowObj.nombre} ${rowObj.apellidos}`;
+      }
+
+      // INICIAR EL LECTOR
+      const html5QrCode = new Html5Qrcode("reader");
+
+      function onScanSuccess(decodedText, decodedResult) {
+        try {
+          const payload = JSON.parse(decodedText);
+
+          if (!payload.dni || !payload.nombre || !payload.apellidos) {
+            statusEl.textContent =
+              'QR inválido: faltan campos (dni, nombre o apellidos)';
+            return;
+          }
+
+          // Fecha y hora actual
+          const now = new Date();
+          const fecha = now.toLocaleDateString('es-PE');
+          const hora = now.toLocaleTimeString('es-PE');
+
+          const row = {
+            dni: payload.dni,
+            nombre: payload.nombre,
+            apellidos: payload.apellidos,
+            fecha,
+            hora
+          };
+
+          // Pausar cámara mientras se guarda
+          html5QrCode.pause(true);
+          statusEl.textContent =
+            `Alumno detectado: ${row.dni} - ${row.nombre} ${row.apellidos}. Registrando...`;
+
+          enviarARegistro(row).then(() => {
+            // Reanudar escaneo
+            setTimeout(() => {
+              html5QrCode.resume();
+              statusEl.textContent = 'Esperando escaneo...';
+            }, 1500);
+          });
+
+        } catch (err) {
+          statusEl.textContent = 'QR no es JSON válido';
+        }
+      }
+
+      function onScanFailure(error) {
+        // Ignorado para no saturar la interfaz
+      }
+
+      // Buscar cámaras y comenzar
+      Html5Qrcode.getCameras()
+        .then(cameras => {
+          if (cameras && cameras.length > 0) {
+            const camId = cameras[0].id;
+            html5QrCode.start(
+              camId,
+              { fps: 10, qrbox: 300 },
+              onScanSuccess,
+              onScanFailure
+            ).catch(err => {
+              statusEl.textContent = "Error al iniciar cámara: " + err;
+            });
+          } else {
+            statusEl.textContent = "No se encontraron cámaras.";
+          }
+        })
+        .catch(err => {
+          statusEl.textContent = "Error buscando cámaras: " + err;
+        });
+
+    })();
+  </script>
+</body>
+</html>
